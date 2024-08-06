@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flyer Performance Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-zoom@1.2.0"></script>
+    <script src="https://sdk.amazonaws.com/js/aws-sdk-2.953.0.min.js"></script>
+    <style>
+        body {
+    background-color: #1a1a1a;
+    color: #ffffff;
+    font-family: 'Helvetica Neue', Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+.container {
+    display: flex;
+    padding: 20px;
+    gap: 20px;
+}
+
+.chart-container {
+    flex: 2;
+    background-color: #333;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+}
+
+.details {
+    flex: 1;
+    background-color: #444;
+    padding: 20px;
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+h2 {
+    margin: 0 0 15px 0;
+    font-size: 26px;
+    color: #ffd700;
+    font-weight: 600;
+    border-bottom: 2px solid #ffd700;
+    padding-bottom: 5px;
+}
+
+.data-section {
+    display: flex;
+    flex-direction: column;
+    gap: 20px; /* Increased gap for better spacing */
+    padding: 20px; /* Added padding for a more spacious feel */
+    max-width: 800px; /* Added a max-width for a more contained layout */
+    margin: 0 auto; /* Centered the section horizontally */
+}
+
+.data-section div {
+    background-color: #1f1f1f; /* Slightly lighter background for better contrast */
+    padding: 20px; /* Increased padding for more content space */
+    border-radius: 12px; /* More rounded corners for a softer look */
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Softer shadow for a more elegant appearance */
+    border: 1px solid #444; /* Added a subtle border for definition */
+}
+
+.values {
+    background-color: #1f1f1f; /* Consistent background color */
+    padding: 20px; /* Increased padding for consistency */
+    border-radius: 12px; /* Consistent border radius */
+    text-align: center;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2); /* Consistent shadow */
+    border: 1px solid #444; /* Added a subtle border */
+}
+
+.values p {
+    margin: 10px 0; /* Increased margin for better spacing */
+    font-size: 18px; /* Larger font size for improved readability */
+    font-weight: 400; /* Slightly lighter weight for a modern look */
+    color: #e0e0e0; /* Lighter text color for better contrast */
+    line-height: 1.5; /* Improved line height for better readability */
+}
+
+
+.checkboxes {
+    margin-bottom: 25px;
+}
+
+.checkboxes label {
+    display: block;
+    margin: 10px 0;
+    color: #ffffff;
+    font-size: 16px;
+}
+
+.flyer-images {
+    display: flex;
+    gap: 15px;
+    justify-content: space-between;
+}
+
+.flyer-images img {
+    width: 100%;
+    max-width: 180px;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="details">
+            <h2>Flyer Performance</h2>
+            <div class="checkboxes">
+                <label><input type="checkbox" id="viewTypeCheckbox" checked> ViewType</label>
+                <label><input type="checkbox" id="codeCheckbox" checked> Code</label>
+                <label><input type="checkbox" id="actionTypeCheckbox" checked> ActionType</label>
+                <label><input type="checkbox" id="emailCheckbox" checked> Email</label>
+            </div>
+            <div class="data-section">
+                <div class="values">
+                    <p>ViewType: <span id="viewTypeCount">0</span></p>
+                    <p>Code: <span id="codeCount">0</span></p>
+                    <p>ActionType: <span id="actionTypeCount">0</span></p>
+                    <p>Email: <span id="emailCount">0</span></p>
+                </div>
+                <div class="flyer-images">
+                    <div>
+                        <img src="https://bafybeih2nsbgaw7szabh4mi4grwcqebyruovbrftcjtg3k7ogqbiwqycqm.ipfs.nftstorage.link/" alt="Front of Flyer">
+                        <p>Front</p>
+                    </div>
+                    <div>
+                        <img src="https://bafybeih2nsbgaw7szabh4mi4grwcqebyruovbrftcjtg3k7ogqbiwqycqm.ipfs.nftstorage.link/" alt="Back of Flyer">
+                        <p>Back</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="chart-container">
+            <canvas id="myChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        AWS.config.update({
+            region: 'eu-north-1',
+            credentials: new AWS.Credentials('AKIAVRUVVVUMRBVSI6F7', 'dhjsq1zoM9gYgY+/38KJy6ZQSafFrVKpwWJnSEHk')
+        });
+
+        var dynamodb = new AWS.DynamoDB.DocumentClient();
+        var tableName = 'lf01';
+
+        let promoCodes = [];
+        let chart = null;
+
+        function loadPromoCodes() {
+            var params = {
+                TableName: tableName,
+                Limit: 10000,
+                ScanIndexForward: false
+            };
+
+            dynamodb.scan(params, function(err, data) {
+                if (err) {
+                    alert("Error loading promo codes from DynamoDB: " + err.message);
+                } else {
+                    promoCodes = data.Items;
+                    updateChart(promoCodes);
+                }
+            });
+        }
+
+        function updateChart(data) {
+            const months = Array.from({ length: 12 }, (_, i) => new Date(0, i).toLocaleString('default', { month: 'long' }));
+
+            const monthCounts = months.reduce((acc, month) => {
+                acc[month] = { viewType: 0, code: 0, actionType: 0, email: 0 };
+                return acc;
+            }, {});
+
+            data.forEach(item => {
+                const month = new Date(item.dateTime).toLocaleString('default', { month: 'long' });
+                if (item.viewType) monthCounts[month].viewType += 1;
+                if (item.code) monthCounts[month].code += 1;
+                if (item.actionType) monthCounts[month].actionType += 1;
+                if (item.email) monthCounts[month].email += 1;
+            });
+
+            const viewTypeData = months.map(month => monthCounts[month].viewType);
+            const codeData = months.map(month => monthCounts[month].code);
+            const actionTypeData = months.map(month => monthCounts[month].actionType);
+            const emailData = months.map(month => monthCounts[month].email);
+
+            const ctx = document.getElementById('myChart').getContext('2d');
+            chart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: months,
+                    datasets: [
+                        {
+                            label: 'ViewType',
+                            data: viewTypeData,
+                            backgroundColor: 'rgba(54, 162, 235, 0.2)',
+                            borderColor: 'rgba(54, 162, 235, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Code',
+                            data: codeData,
+                            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+                            borderColor: 'rgba(75, 192, 192, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'ActionType',
+                            data: actionTypeData,
+                            backgroundColor: 'rgba(255, 99, 132, 0.2)',
+                            borderColor: 'rgba(255, 99, 132, 1)',
+                            borderWidth: 1
+                        },
+                        {
+                            label: 'Email',
+                            data: emailData,
+                            backgroundColor: 'rgba(255, 159, 64, 0.2)',
+                            borderColor: 'rgba(255, 159, 64, 1)',
+                            borderWidth: 1
+                        }
+                    ]
+                },
+                options: {
+                    plugins: {
+                        legend: {
+                            labels: {
+                                color: 'white'
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.7)',
+                            titleColor: 'white',
+                            bodyColor: 'white',
+                            footerColor: 'white'
+                        },
+                        zoom: {
+                            pan: {
+                                enabled: true,
+                                mode: 'x'
+                            },
+                            zoom: {
+                                enabled: true,
+                                mode: 'x',
+                                speed: 0.1
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: {
+                                color: 'white'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.2)'
+                            }
+                        },
+                        y: {
+                            ticks: {
+                                color: 'white'
+                            },
+                            grid: {
+                                color: 'rgba(255, 255, 255, 0.2)'
+                            }
+                        }
+                    },
+                    onClick: (e) => {
+                        const elements = chart.getElementsAtEventForMode(e, 'nearest', { intersect: true }, true);
+                        if (elements.length > 0) {
+                            const month = chart.data.labels[elements[0].index];
+                            const filteredData = data.filter(item => new Date(item.dateTime).toLocaleString('default', { month: 'long' }) === month);
+
+                            const days = Array.from({ length: 31 }, (_, i) => `${i + 1}`);
+                            const dayCounts = days.reduce((acc, day) => {
+                                acc[day] = { viewType: 0, code: 0, actionType: 0, email: 0 };
+                                return acc;
+                            }, {});
+
+                            filteredData.forEach(item => {
+                                const day = new Date(item.dateTime).getDate().toString();
+                                if (item.viewType) dayCounts[day].viewType += 1;
+                                if (item.code) dayCounts[day].code += 1;
+                                if (item.actionType) dayCounts[day].actionType += 1;
+                                if (item.email) dayCounts[day].email += 1;
+                            });
+
+                            const viewTypeDayData = days.map(day => dayCounts[day].viewType);
+                            const codeDayData = days.map(day => dayCounts[day].code);
+                            const actionTypeDayData = days.map(day => dayCounts[day].actionType);
+                            const emailDayData = days.map(day => dayCounts[day].email);
+
+                            chart.data.labels = days;
+                            chart.data.datasets[0].data = viewTypeDayData;
+                            chart.data.datasets[1].data = codeDayData;
+                            chart.data.datasets[2].data = actionTypeDayData;
+                            chart.data.datasets[3].data = emailDayData;
+                            chart.update();
+                        }
+                    }
+                }
+            });
+
+            document.getElementById('viewTypeCount').textContent = viewTypeData.reduce((a, b) => a + b, 0);
+            document.getElementById('codeCount').textContent = codeData.reduce((a, b) => a + b, 0);
+            document.getElementById('actionTypeCount').textContent = actionTypeData.reduce((a, b) => a + b, 0);
+            document.getElementById('emailCount').textContent = emailData.reduce((a, b) => a + b, 0);
+
+            document.getElementById('viewTypeCheckbox').addEventListener('change', function() {
+                chart.getDatasetMeta(0).hidden = !this.checked;
+                chart.update();
+            });
+            document.getElementById('codeCheckbox').addEventListener('change', function() {
+                chart.getDatasetMeta(1).hidden = !this.checked;
+                chart.update();
+            });
+            document.getElementById('actionTypeCheckbox').addEventListener('change', function() {
+                chart.getDatasetMeta(2).hidden = !this.checked;
+                chart.update();
+            });
+            document.getElementById('emailCheckbox').addEventListener('change', function() {
+                chart.getDatasetMeta(3).hidden = !this.checked;
+                chart.update();
+            });
+        }
+
+        window.onload = loadPromoCodes;
+    </script>
+</body>
+</html>
